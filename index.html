@@ -188,18 +188,20 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem("jarvis." + k); return v === null ? d : v; } catch { return d; } },
   set(k, v) { try { localStorage.setItem("jarvis." + k, v); } catch {} },
 };
+// キーに紛れ込んだ全角文字・空白・改行などを取り除く
+const cleanKey = (v) => String(v || "").replace(/[^\x21-\x7E]/g, "");
 const cfg = {
-  apiKey: store.get("apiKey", ""),
+  apiKey: cleanKey(store.get("apiKey", "")),
   model: store.get("model", "claude-opus-5-5"),
   userName: store.get("userName", "ボス"),
   voice: store.get("voice", ""),
   rate: parseFloat(store.get("rate", "1.1")),
   handsFree: store.get("handsFree", "1") === "1",
   ttsEngine: store.get("ttsEngine", "eleven"),
-  elevenKey: store.get("elevenKey", ""),
+  elevenKey: cleanKey(store.get("elevenKey", "")),
   elevenVoice: store.get("elevenVoice", "JBFqnCBsd6RMkjVDRZzb"),
   elevenModel: store.get("elevenModel", "eleven_flash_v2_5"),
-  openaiKey: store.get("openaiKey", ""),
+  openaiKey: cleanKey(store.get("openaiKey", "")),
   openaiVoice: store.get("openaiVoice", "onyx"),
 };
 const TTS_KEYS = ["ttsEngine", "elevenKey", "elevenVoice", "elevenModel", "openaiKey", "openaiVoice"];
@@ -588,10 +590,10 @@ function readSettings() {
   cfg.voice = $("voice").value;
   cfg.rate = parseFloat($("rate").value);
   cfg.ttsEngine = $("ttsEngine").value;
-  cfg.elevenKey = $("elevenKey").value.trim();
+  cfg.elevenKey = cleanKey($("elevenKey").value);
   cfg.elevenVoice = $("elevenVoice").value === "custom" ? ($("elevenVoiceId").value.trim() || "JBFqnCBsd6RMkjVDRZzb") : $("elevenVoice").value;
   cfg.elevenModel = $("elevenModel").value;
-  cfg.openaiKey = $("openaiKey").value.trim();
+  cfg.openaiKey = cleanKey($("openaiKey").value);
   cfg.openaiVoice = $("openaiVoice").value;
   ttsErrShown = false;
 }
@@ -604,7 +606,8 @@ $("testVoice").addEventListener("click", () => {
   speak(`お呼びでしょうか、${$("userName").value || "ボス"}。`);
 });
 $("saveSettings").addEventListener("click", () => {
-  cfg.apiKey = $("apiKey").value.trim();
+  cfg.apiKey = cleanKey($("apiKey").value);
+  if (cfg.apiKey && !cfg.apiKey.startsWith("sk-ant-")) alert("APIキーは sk-ant- で始まる文字列です。コピーし直してください。");
   cfg.model = $("model").value;
   cfg.userName = $("userName").value.trim() || "ボス";
   readSettings();
