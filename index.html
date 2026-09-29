@@ -1,0 +1,943 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#020a18">
+<title>J.A.R.V.I.S.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Share+Tech+Mono&family=Noto+Sans+JP:wght@400;500&display=swap">
+<style>
+  /* コックピットHUD：全面キャンバス＋上下に薄いDOMオーバーレイ */
+  :root {
+    --bg: #020a18;
+    --panel: rgba(4, 22, 44, .9);
+    --line: rgba(80, 210, 255, .28);
+    --cyan: #3fd4ff;
+    --cyan-hi: #c9f4ff;
+    --amber: #ffb347;
+    --red: #ff4d5e;
+    --fg: #d4f1ff;
+    --dim: #5f93b3;
+    --display: "Orbitron", "Arial Black", sans-serif;
+    --mono: "Share Tech Mono", ui-monospace, monospace;
+    --body: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--body);
+    overflow: hidden; -webkit-tap-highlight-color: transparent; user-select: none;
+  }
+  #core { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: pointer; touch-action: manipulation; }
+  .overlay { position: fixed; left: 0; right: 0; pointer-events: none; padding-inline: 16px; }
+  .overlay > * { pointer-events: auto; }
+  header.overlay { top: 0; padding-top: calc(env(safe-area-inset-top, 0px) + 10px); display: flex; justify-content: space-between; align-items: flex-start; }
+  .brand { font-family: var(--display); font-weight: 700; letter-spacing: .32em; font-size: 14px; color: var(--cyan); text-shadow: 0 0 10px rgba(63,212,255,.7); pointer-events: none; }
+  .brand small { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: .18em; color: var(--dim); font-weight: 400; margin-top: 3px; text-shadow: none; }
+  .iconbtn {
+    background: rgba(2,10,24,.5); border: 1px solid var(--line); color: var(--cyan);
+    width: 40px; height: 40px; font-size: 18px; cursor: pointer;
+    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  }
+  button:focus-visible, input:focus-visible, select:focus-visible, #core:focus-visible { outline: 2px solid var(--cyan-hi); outline-offset: 2px; }
+
+  footer.overlay { bottom: 0; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px); display: grid; gap: 8px; justify-items: center; }
+  .captions { display: grid; gap: 4px; width: min(100%, 640px); max-height: 20vh; overflow-y: auto; pointer-events: none; }
+  .cap { font-size: 12px; line-height: 1.55; color: var(--dim); text-shadow: 0 0 6px #000, 0 0 2px #000; }
+  .cap b { font-family: var(--mono); font-size: 10px; letter-spacing: .15em; margin-right: 8px; font-weight: 400; }
+  .cap.you b { color: var(--amber); }
+  .cap.ai b { color: var(--cyan); }
+  .cap.ai { color: var(--fg); }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .pill {
+    font: 11px var(--mono); letter-spacing: .12em; color: var(--fg); background: rgba(2,10,24,.6);
+    border: 1px solid var(--line); padding: 7px 14px; cursor: pointer;
+    clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  }
+  .pill[aria-pressed="true"] { border-color: var(--cyan); color: var(--cyan-hi); background: rgba(63,212,255,.14); }
+
+  dialog {
+    background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+    width: min(440px, calc(100vw - 32px)); padding: 20px; backdrop-filter: blur(10px);
+    clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  }
+  dialog::backdrop { background: rgba(0,4,12,.7); }
+  dialog h2 { font-family: var(--display); font-size: 13px; letter-spacing: .3em; color: var(--cyan); margin: 0 0 16px; }
+  .field { display: grid; gap: 6px; margin-bottom: 14px; }
+  .field label { font-size: 11px; color: var(--dim); letter-spacing: .05em; }
+  .field input, .field select {
+    font: 14px var(--body); color: var(--fg); background: rgba(0,0,0,.35);
+    border: 1px solid var(--line); border-radius: 4px; padding: 10px; width: 100%; user-select: text;
+  }
+  .field input[type=range] { padding: 0; }
+  .hint { font-size: 11px; color: var(--dim); line-height: 1.6; }
+  .hint a { color: var(--cyan); }
+  .row { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+  .btn { font: 500 13px var(--body); border-radius: 4px; padding: 10px 16px; cursor: pointer; border: 1px solid var(--line); background: transparent; color: var(--fg); }
+  .btn.primary { background: var(--cyan); color: #02121d; border-color: var(--cyan); }
+</style>
+</head>
+<body>
+<canvas id="core" aria-label="タップして話しかける" role="button" tabindex="0"></canvas>
+
+<header class="overlay">
+  <div class="brand">J.A.R.V.I.S.<small>JUST A RATHER VERY INTELLIGENT SYSTEM</small></div>
+  <button class="iconbtn" id="openSettings" aria-label="設定">⚙</button>
+</header>
+
+<footer class="overlay">
+  <div class="captions" id="captions" aria-live="polite"></div>
+  <div class="controls">
+    <button class="pill" id="handsFree" aria-pressed="true">会話モード</button>
+    <button class="pill" id="clearMem">記憶リセット</button>
+  </div>
+</footer>
+<div id="status" hidden></div>
+
+<dialog id="settings">
+  <h2>SETTINGS</h2>
+  <div class="field">
+    <label for="apiKey">Anthropic APIキー</label>
+    <input id="apiKey" type="password" placeholder="sk-ant-..." autocomplete="off">
+    <div class="hint">キーはこの端末のブラウザにだけ保存されます。<a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> で発行できます（従量課金）。</div>
+  </div>
+  <div class="field">
+    <label for="model">モデル</label>
+    <select id="model">
+      <option value="claude-opus-5-5">Claude Opus 5.5（賢い）</option>
+      <option value="claude-sonnet-5-5">Claude Sonnet 5.5（バランス）</option>
+      <option value="claude-haiku-4-5">Claude Haiku 4.5（最速・安い）</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="userName">呼び名</label>
+    <input id="userName" type="text" placeholder="例：ボス">
+  </div>
+  <div class="field">
+    <label for="ttsEngine">声のエンジン</label>
+    <select id="ttsEngine">
+      <option value="eleven">ElevenLabs（最高音質・おすすめ）</option>
+      <option value="openai">OpenAI TTS（高音質・安い）</option>
+      <option value="browser">ブラウザ標準（無料・機械っぽい）</option>
+    </select>
+  </div>
+  <div data-engine="eleven">
+    <div class="field">
+      <label for="elevenKey">ElevenLabs APIキー</label>
+      <input id="elevenKey" type="password" placeholder="sk_..." autocomplete="off">
+      <div class="hint"><a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">elevenlabs.io</a> で発行。無料枠あり（月1万文字ほど）。</div>
+    </div>
+    <div class="field">
+      <label for="elevenVoice">ボイス</label>
+      <select id="elevenVoice">
+        <option value="JBFqnCBsd6RMkjVDRZzb">George（落ち着いた英国紳士・執事向き）</option>
+        <option value="onwK4e9ZLuTAKqWW03F9">Daniel（キリッとしたニュース調）</option>
+        <option value="pqHfZKP75CvOlQylNhV4">Bill（渋い低音）</option>
+        <option value="custom">ボイスIDを直接入力</option>
+      </select>
+      <input id="elevenVoiceId" type="text" placeholder="Voice Library でコピーしたボイスID" hidden>
+    </div>
+    <div class="field">
+      <label for="elevenModel">音質 / 速さ</label>
+      <select id="elevenModel">
+        <option value="eleven_flash_v2_5">Flash（返事が速い）</option>
+        <option value="eleven_multilingual_v2">Multilingual v2（一番自然）</option>
+      </select>
+    </div>
+  </div>
+  <div data-engine="openai">
+    <div class="field">
+      <label for="openaiKey">OpenAI APIキー</label>
+      <input id="openaiKey" type="password" placeholder="sk-..." autocomplete="off">
+      <div class="hint"><a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a> で発行（従量課金）。</div>
+    </div>
+    <div class="field">
+      <label for="openaiVoice">ボイス</label>
+      <select id="openaiVoice">
+        <option value="onyx">Onyx（低音の男性）</option>
+        <option value="ash">Ash（落ち着いた男性）</option>
+        <option value="ballad">Ballad（柔らかい男性）</option>
+        <option value="echo">Echo（明るめの男性）</option>
+        <option value="sage">Sage（女性）</option>
+      </select>
+    </div>
+  </div>
+  <div class="field" data-engine="browser">
+    <label for="voice">ボイス</label>
+    <select id="voice"></select>
+    <div class="hint">iPhoneは「設定 → アクセシビリティ → 読み上げコンテンツ → 声 → 日本語」で「拡張」や「プレミアム」の声を入れると少し良くなります。PCならEdgeの「Natural」系の声がおすすめ。</div>
+  </div>
+  <div class="field">
+    <label for="rate">話す速さ <span id="rateVal"></span></label>
+    <input id="rate" type="range" min="0.7" max="1.6" step="0.05">
+  </div>
+  <div class="row">
+    <button class="btn" id="testVoice">声をテスト</button>
+    <button class="btn primary" id="saveSettings">保存</button>
+  </div>
+</dialog>
+
+<script type="module">
+import Anthropic from "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk/+esm";
+
+// ---------- 設定 ----------
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("jarvis." + k); return v === null ? d : v; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("jarvis." + k, v); } catch {} },
+};
+const cfg = {
+  apiKey: store.get("apiKey", ""),
+  model: store.get("model", "claude-opus-5-5"),
+  userName: store.get("userName", "ボス"),
+  voice: store.get("voice", ""),
+  rate: parseFloat(store.get("rate", "1.1")),
+  handsFree: store.get("handsFree", "1") === "1",
+  ttsEngine: store.get("ttsEngine", "eleven"),
+  elevenKey: store.get("elevenKey", ""),
+  elevenVoice: store.get("elevenVoice", "JBFqnCBsd6RMkjVDRZzb"),
+  elevenModel: store.get("elevenModel", "eleven_flash_v2_5"),
+  openaiKey: store.get("openaiKey", ""),
+  openaiVoice: store.get("openaiVoice", "onyx"),
+};
+const TTS_KEYS = ["ttsEngine", "elevenKey", "elevenVoice", "elevenModel", "openaiKey", "openaiVoice"];
+
+const $ = (id) => document.getElementById(id);
+const statusEl = $("status"), capsEl = $("captions");
+
+function systemPrompt() {
+  return `あなたはJARVIS。映画アイアンマンのAIアシスタントのように、有能で落ち着いていて、少しウィットのある執事風の口調で話す。
+ユーザーのことは「${cfg.userName || "ボス"}」と呼ぶ。
+これは音声会話で、あなたの返答はそのまま読み上げられる。
+- 日本語の話し言葉で答える。
+- 基本は1〜3文。詳しく聞かれたときだけ長くする。
+- 見出し、箇条書き、記号、絵文字、URL、マークダウンは使わない。
+- 数字や英語は読み上げやすい形で書く。
+- 音声認識の誤変換がありうるので、文脈から意図を汲み取る。
+現在時刻: ${new Date().toLocaleString("ja-JP")}`;
+}
+
+// ---------- 状態 ----------
+let state = "idle"; // idle | listening | thinking | speaking
+let history = [];
+let recog = null, abortCtl = null, unlocked = false;
+
+function setState(s, label, cls = "") {
+  state = s;
+  statusEl.textContent = label;
+  statusEl.className = "status " + cls;
+}
+function caption(who, text) {
+  const d = document.createElement("div");
+  d.className = "cap " + who;
+  d.innerHTML = `<b>${who === "you" ? "YOU" : "JARVIS"}</b>`;
+  const span = document.createElement("span");
+  span.textContent = text;
+  d.appendChild(span);
+  capsEl.appendChild(d);
+  while (capsEl.children.length > 6) capsEl.firstChild.remove();
+  capsEl.scrollTop = capsEl.scrollHeight;
+  return span;
+}
+
+// ---------- 音声合成 ----------
+const synth = window.speechSynthesis;
+let voices = [];
+function loadVoices() {
+  voices = synth.getVoices().filter(v => v.lang.startsWith("ja"));
+  const sel = $("voice");
+  sel.innerHTML = "";
+  voices.forEach(v => {
+    const o = document.createElement("option");
+    o.value = v.name; o.textContent = v.name;
+    sel.appendChild(o);
+  });
+  if (!cfg.voice && voices.length) {
+    const pref = voices.find(v => /otoya|hattori|ichiro|keita|male|男性/i.test(v.name)) || voices.find(v => /google/i.test(v.name)) || voices[0];
+    cfg.voice = pref.name;
+  }
+  sel.value = cfg.voice;
+}
+loadVoices();
+synth.onvoiceschanged = loadVoices;
+
+let speakQueue = 0, streamDone = false;
+
+// ---- 高音質TTS（ElevenLabs / OpenAI）----
+// 文ごとに音声を先読みで取りに行き、順番どおりに1つの<audio>で再生する
+const player = new Audio();
+player.preload = "auto";
+player.playsInline = true;
+let audioQueue = [], playing = false, ttsAbort = new AbortController();
+let audioCtx = null, analyser = null, levelBuf = null;
+let voiceLevel = 0; // HUDが声の大きさに合わせて脈打つ用
+
+function unlockAudio() {
+  // iOSはユーザー操作中に一度鳴らさないと以降の自動再生が止められる
+  try {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = audioCtx.createMediaElementSource(player);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      levelBuf = new Uint8Array(analyser.fftSize);
+      src.connect(analyser); analyser.connect(audioCtx.destination);
+    }
+    audioCtx.resume();
+  } catch { analyser = null; }
+  player.src = URL.createObjectURL(silentWav());
+  player.play().catch(() => {});
+}
+
+function silentWav() {
+  // 0.05秒の無音WAV（iOSの自動再生ロック解除用）
+  const n = 1200, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const w = (o, str) => [...str].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); w(8, "WAVE"); w(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 24000, true); v.setUint32(28, 48000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, "data"); v.setUint32(40, n * 2, true);
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+function readLevel() {
+  if (!analyser || !playing) { voiceLevel *= 0.85; return voiceLevel; }
+  analyser.getByteTimeDomainData(levelBuf);
+  let sum = 0;
+  for (const v of levelBuf) { const d = (v - 128) / 128; sum += d * d; }
+  voiceLevel = voiceLevel * 0.6 + Math.min(1, Math.sqrt(sum / levelBuf.length) * 4) * 0.4;
+  return voiceLevel;
+}
+
+async function fetchTTS(text, signal) {
+  if (cfg.ttsEngine === "eleven") {
+    const voice = cfg.elevenVoice;
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`, {
+      method: "POST", signal,
+      headers: { "xi-api-key": cfg.elevenKey, "Content-Type": "application/json", Accept: "audio/mpeg" },
+      body: JSON.stringify({
+        text,
+        model_id: cfg.elevenModel,
+        language_code: cfg.elevenModel === "eleven_flash_v2_5" ? "ja" : undefined,
+        voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.15, speed: Math.min(1.2, Math.max(0.7, cfg.rate)) },
+      }),
+    });
+    if (!res.ok) throw new Error("eleven " + res.status);
+    return res.blob();
+  }
+  const res = await fetch("https://api.openai.com/v1/audio/speech", {
+    method: "POST", signal,
+    headers: { Authorization: `Bearer ${cfg.openaiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "gpt-4o-mini-tts",
+      voice: cfg.openaiVoice,
+      input: text,
+      response_format: "mp3",
+      instructions: `落ち着いて知的な英国風の執事AI。低めの声で、丁寧かつ少しウィットを込めて、${cfg.rate > 1.15 ? "やや速めに" : cfg.rate < 0.9 ? "ゆっくりと" : "自然な速さで"}日本語を話す。`,
+    }),
+  });
+  if (!res.ok) throw new Error("openai " + res.status);
+  return res.blob();
+}
+
+function hqReady() {
+  return (cfg.ttsEngine === "eleven" && cfg.elevenKey) || (cfg.ttsEngine === "openai" && cfg.openaiKey);
+}
+
+function speakHQ(text) {
+  const signal = ttsAbort.signal;
+  const item = { text, blob: fetchTTS(text, signal) };
+  item.blob.catch(() => {}); // 失敗は再生時に扱う
+  audioQueue.push(item);
+  speakQueue++;
+  pump();
+}
+
+async function pump() {
+  if (playing || !audioQueue.length) return;
+  playing = true;
+  const item = audioQueue[0];
+  const signal = ttsAbort.signal;
+  try {
+    const blob = await item.blob;
+    if (signal.aborted) return;
+    const url = URL.createObjectURL(blob);
+    if (state !== "speaking") setState("speaking", "SPEAKING");
+    audioCtx?.resume();
+    player.src = url;
+    await new Promise((resolve) => {
+      player.onended = player.onerror = resolve;
+      player.play().catch(resolve);
+      signal.addEventListener("abort", resolve, { once: true });
+    });
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    if (signal.aborted) return;
+    // 高音質TTSが失敗したらその文だけブラウザの声で読む
+    console.warn("TTS失敗、ブラウザ音声で代替:", err);
+    ttsError(err);
+    await new Promise((resolve) => speakBrowser(item.text, resolve));
+  } finally {
+    if (!signal.aborted) {
+      audioQueue.shift();
+      speakQueue--;
+      playing = false;
+      maybeFinish();
+      pump();
+    }
+  }
+}
+
+let ttsErrShown = false;
+function ttsError(err) {
+  if (ttsErrShown) return;
+  ttsErrShown = true;
+  const code = String(err?.message || "");
+  caption("ai", /401/.test(code) ? "（声のAPIキーが正しくないようです。⚙で確認してください）"
+    : /402|429|quota/.test(code) ? "（声のAPIの無料枠か残高が足りないようです）"
+    : "（高音質ボイスに接続できなかったので、標準の声で話します）");
+}
+
+function stopTTS() {
+  ttsAbort.abort();
+  ttsAbort = new AbortController();
+  audioQueue = [];
+  playing = false;
+  player.pause();
+}
+
+function speak(text) {
+  text = text.replace(/[*#`_>|~\-]{1,}/g, " ").trim();
+  if (!text) return;
+  if (hqReady()) return speakHQ(text);
+  speakQueue++;
+  speakBrowser(text, () => { speakQueue--; maybeFinish(); });
+}
+
+function speakBrowser(text, done) {
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "ja-JP";
+  u.rate = cfg.rate;
+  u.pitch = 0.9;
+  const v = voices.find(v => v.name === cfg.voice);
+  if (v) u.voice = v;
+  u.onstart = () => { if (state !== "speaking") setState("speaking", "SPEAKING"); };
+  u.onend = u.onerror = () => done();
+  synth.speak(u);
+}
+function maybeFinish() {
+  if (speakQueue > 0 || !streamDone) return;
+  if (state === "speaking" || state === "thinking") {
+    if (cfg.handsFree) setTimeout(() => startListening(), 250);
+    else setState("idle", "TAP TO TALK");
+  }
+}
+
+// ---------- 音声認識 ----------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function startListening() {
+  if (!SR) { setState("idle", "このブラウザは音声認識に未対応", "err"); return; }
+  if (!cfg.apiKey) { setState("idle", "⚙ でAPIキーを設定してください", "warn"); $("settings").showModal(); return; }
+  stopAll();
+  recog = new SR();
+  recog.lang = "ja-JP";
+  recog.interimResults = true;
+  recog.continuous = false;
+  let finalText = "", live = null;
+  recog.onstart = () => setState("listening", "LISTENING");
+  recog.onresult = (e) => {
+    let interim = "";
+    finalText = "";
+    for (const r of e.results) (r.isFinal ? (finalText += r[0].transcript) : (interim += r[0].transcript));
+    const shown = finalText + interim;
+    if (!live) live = caption("you", shown); else live.textContent = shown;
+  };
+  recog.onerror = (e) => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") setState("idle", "マイクを許可してください", "err");
+    else if (e.error === "no-speech") setState("idle", "TAP TO TALK");
+  };
+  recog.onend = () => {
+    recog = null;
+    const text = finalText.trim();
+    if (text) ask(text);
+    else if (state === "listening") setState("idle", "TAP TO TALK");
+  };
+  try { recog.start(); } catch { setState("idle", "TAP TO TALK"); }
+}
+
+function stopAll() {
+  if (recog) { recog.onend = null; try { recog.abort(); } catch {} recog = null; }
+  if (abortCtl) { abortCtl.abort(); abortCtl = null; }
+  synth.cancel();
+  stopTTS();
+  speakQueue = 0;
+}
+
+// ---------- Claude ----------
+async function ask(text) {
+  history.push({ role: "user", content: text });
+  setState("thinking", "THINKING");
+  streamDone = false;
+  const client = new Anthropic({ apiKey: cfg.apiKey, dangerouslyAllowBrowser: true });
+  abortCtl = new AbortController();
+  let full = "", buf = "", span = null;
+
+  try {
+    const params = {
+      model: cfg.model,
+      max_tokens: 4000,
+      system: systemPrompt(),
+      messages: history,
+    };
+    if (cfg.model !== "claude-haiku-4-5") {
+      params.output_config = { effort: "low" };
+      params.betas = ["server-side-fallback-2026-07-01"];
+      params.fallbacks = "default";
+    }
+    const stream = client.beta.messages.stream(params, { signal: abortCtl.signal });
+
+    for await (const ev of stream) {
+      if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
+        full += ev.delta.text;
+        buf += ev.delta.text;
+        if (!span) span = caption("ai", ""); span.textContent = full;
+        // 文の区切りごとに読み上げて待ち時間を短くする
+        let m;
+        while ((m = buf.match(/^([\s\S]*?[。！？!?\n])/))) {
+          speak(m[1]);
+          buf = buf.slice(m[1].length);
+        }
+      }
+    }
+    const final = await stream.finalMessage();
+    if (buf.trim()) speak(buf);
+    history.push({ role: "assistant", content: final.content });
+    if (final.stop_reason === "refusal" && !full) { speak("申し訳ありません、その件にはお答えできません。"); }
+  } catch (err) {
+    if (err?.name === "AbortError" || abortCtl === null) return;
+    history.pop();
+    const status = err?.status;
+    const msg = status === 401 ? "APIキーが正しくないようです。設定を確認してください。"
+      : status === 429 ? "少し混み合っています。数秒後にもう一度どうぞ。"
+      : status === 400 && /credit|billing/i.test(err?.message || "") ? "APIのクレジット残高が足りないようです。"
+      : "通信エラーです。接続を確認してください。";
+    caption("ai", msg);
+    speak(msg);
+    setState("speaking", "ERROR", "err");
+  } finally {
+    abortCtl = null;
+    streamDone = true;
+    maybeFinish();
+  }
+}
+
+// ---------- 操作 ----------
+function onCoreTap() {
+  // iOSは最初のタップで音声合成を解放する必要がある
+  if (!unlocked) { synth.speak(new SpeechSynthesisUtterance("")); unlockAudio(); unlocked = true; }
+  if (state === "listening") { if (recog) recog.stop(); return; }
+  if (state === "speaking" || state === "thinking") { stopAll(); streamDone = true; }
+  startListening();
+}
+$("core").addEventListener("click", onCoreTap);
+$("core").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onCoreTap(); } });
+
+const hf = $("handsFree");
+hf.setAttribute("aria-pressed", String(cfg.handsFree));
+hf.addEventListener("click", () => {
+  cfg.handsFree = !cfg.handsFree;
+  hf.setAttribute("aria-pressed", String(cfg.handsFree));
+  store.set("handsFree", cfg.handsFree ? "1" : "0");
+});
+$("clearMem").addEventListener("click", () => {
+  stopAll(); history = []; capsEl.innerHTML = "";
+  setState("idle", "MEMORY CLEARED");
+});
+
+// 設定ダイアログ
+const dlg = $("settings");
+function fillSettings() {
+  $("apiKey").value = cfg.apiKey;
+  $("model").value = cfg.model;
+  $("userName").value = cfg.userName;
+  $("voice").value = cfg.voice;
+  $("rate").value = cfg.rate;
+  $("rateVal").textContent = "×" + cfg.rate.toFixed(2);
+  $("ttsEngine").value = cfg.ttsEngine;
+  $("elevenKey").value = cfg.elevenKey;
+  const preset = [...$("elevenVoice").options].some(o => o.value === cfg.elevenVoice);
+  $("elevenVoice").value = preset ? cfg.elevenVoice : "custom";
+  $("elevenVoiceId").value = preset ? "" : cfg.elevenVoice;
+  $("elevenModel").value = cfg.elevenModel;
+  $("openaiKey").value = cfg.openaiKey;
+  $("openaiVoice").value = cfg.openaiVoice;
+  syncEngineUI();
+}
+function syncEngineUI() {
+  const e = $("ttsEngine").value;
+  document.querySelectorAll("[data-engine]").forEach(el => el.hidden = el.dataset.engine !== e);
+  $("elevenVoiceId").hidden = $("elevenVoice").value !== "custom";
+}
+$("ttsEngine").addEventListener("change", syncEngineUI);
+$("elevenVoice").addEventListener("change", syncEngineUI);
+function readSettings() {
+  cfg.voice = $("voice").value;
+  cfg.rate = parseFloat($("rate").value);
+  cfg.ttsEngine = $("ttsEngine").value;
+  cfg.elevenKey = $("elevenKey").value.trim();
+  cfg.elevenVoice = $("elevenVoice").value === "custom" ? ($("elevenVoiceId").value.trim() || "JBFqnCBsd6RMkjVDRZzb") : $("elevenVoice").value;
+  cfg.elevenModel = $("elevenModel").value;
+  cfg.openaiKey = $("openaiKey").value.trim();
+  cfg.openaiVoice = $("openaiVoice").value;
+  ttsErrShown = false;
+}
+$("rate").addEventListener("input", (e) => $("rateVal").textContent = "×" + parseFloat(e.target.value).toFixed(2));
+$("openSettings").addEventListener("click", () => { fillSettings(); dlg.showModal(); });
+$("testVoice").addEventListener("click", () => {
+  readSettings();
+  if (!unlocked) { unlockAudio(); unlocked = true; }
+  synth.cancel(); stopTTS(); speakQueue = 0;
+  speak(`お呼びでしょうか、${$("userName").value || "ボス"}。`);
+});
+$("saveSettings").addEventListener("click", () => {
+  cfg.apiKey = $("apiKey").value.trim();
+  cfg.model = $("model").value;
+  cfg.userName = $("userName").value.trim() || "ボス";
+  readSettings();
+  for (const k of ["apiKey", "model", "userName", "voice", ...TTS_KEYS]) store.set(k, cfg[k]);
+  store.set("rate", String(cfg.rate));
+  dlg.close();
+  setState("idle", "TAP TO START");
+});
+fillSettings();
+if (!SR) setState("idle", "Chrome か Safari で開いてください", "warn");
+else if (!cfg.apiKey) setState("idle", "⚙ でAPIキーを設定", "warn");
+
+// ---------- HUD描画 ----------
+const cv = $("core"), ctx = cv.getContext("2d");
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(devicePixelRatio || 1, 2);
+  W = cv.width = Math.round(innerWidth * DPR);
+  H = cv.height = Math.round(innerHeight * DPR);
+  buildStatic();
+}
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let energy = 0, statusText = statusEl.textContent, statusCls = "";
+new MutationObserver(() => { statusText = statusEl.textContent; statusCls = statusEl.className; }).observe(statusEl, { childList: true, characterData: true, subtree: true, attributes: true });
+
+const TAU = Math.PI * 2;
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const CY = [63, 212, 255], WH = [220, 248, 255], AM = [255, 179, 71], RD = [255, 77, 94];
+const rand = (() => { let s = 7; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
+
+// レイアウト（横長＝コックピット全景、縦長＝スマホ用に積み直し）
+let L = {};
+function layout() {
+  const land = W > H * 1.1, u = Math.min(W, H) / 100;
+  if (land) {
+    const R = Math.min(H * 0.34, W * 0.19);
+    L = {
+      land, u, cx: W / 2, cy: H * 0.49, R,
+      radar: { x: W * 0.19, y: H * 0.5, r: Math.min(H * 0.17, W * 0.1) },
+      globe: { x: W * 0.3, y: H * 0.8, r: Math.min(H * 0.07, W * 0.045) },
+      gauges: { x: W * 0.1, y: H * 0.26, r: Math.min(H * 0.028, W * 0.017), n: 5, gap: 2.8 },
+      wave: { x: W * 0.3, y: H * 0.14, w: W * 0.12, h: H * 0.11 },
+      gear: { x: W * 0.84, y: H * 0.5, r: Math.min(H * 0.14, W * 0.085) },
+      bars: { x: W * 0.79, y: H * 0.72, w: W * 0.12, h: H * 0.12 },
+      nodes: { x: W * 0.66, y: H * 0.83, w: W * 0.13 },
+      tops: { y: H * 0.075, r: Math.min(H * 0.032, W * 0.018), n: 5 },
+      read: { x: W * 0.74, y: H * 0.2 },
+      scan: { x: W * 0.36, y: H * 0.64 },
+    };
+  } else {
+    const R = Math.min(W * 0.4, H * 0.23);
+    L = {
+      land, u, cx: W / 2, cy: H * 0.41, R,
+      radar: { x: W * 0.25, y: H * 0.72, r: W * 0.16 },
+      globe: { x: W * 0.5, y: H * 0.735, r: W * 0.07 },
+      gauges: { x: W * 0.5 - W * 0.3, y: H * 0.15, r: W * 0.045, n: 5, gap: 2.7 },
+      wave: null,
+      gear: { x: W * 0.77, y: H * 0.72, r: W * 0.13 },
+      bars: null, nodes: null,
+      tops: { y: H * 0.105, r: W * 0.035, n: 5 },
+      read: null, scan: null,
+    };
+  }
+}
+
+// 背景（ドット世界地図風・フレーム）は一度だけ描いてキャッシュ
+let bgCanvas = null;
+function buildStatic() {
+  layout();
+  bgCanvas = document.createElement("canvas");
+  bgCanvas.width = W; bgCanvas.height = H;
+  const g = bgCanvas.getContext("2d"), u = L.u;
+  const grd = g.createRadialGradient(L.cx, L.cy, 0, L.cx, L.cy, Math.max(W, H) * 0.75);
+  grd.addColorStop(0, "#0b3a66"); grd.addColorStop(0.45, "#05213f"); grd.addColorStop(1, "#010812");
+  g.fillStyle = grd; g.fillRect(0, 0, W, H);
+
+  // ドットで描いた大陸っぽい模様
+  const step = u * 1.1;
+  for (let y = H * 0.18; y < H * 0.82; y += step) for (let x = W * 0.05; x < W * 0.95; x += step) {
+    const nx = x / W, ny = y / H;
+    const v = Math.sin(nx * 9.1) * Math.cos(ny * 7.3) + Math.sin(nx * 17 + ny * 5) * 0.6 + Math.cos(nx * 4 - ny * 11) * 0.5;
+    if (v > 0.55) { g.fillStyle = rgba(CY, 0.10 + (v - 0.55) * 0.15); g.fillRect(x, y, u * 0.28, u * 0.28); }
+  }
+  // 六角グリッドのかすかな線
+  g.strokeStyle = rgba(CY, 0.04); g.lineWidth = 1;
+  const hs = u * 4;
+  for (let y = 0; y < H + hs; y += hs * 0.866) for (let x = (Math.round(y / (hs * 0.866)) % 2) * hs / 2; x < W + hs; x += hs) {
+    g.beginPath(); for (let k = 0; k < 6; k++) { const a = k * TAU / 6 + Math.PI / 6; g.lineTo(x + Math.cos(a) * hs * 0.5, y + Math.sin(a) * hs * 0.5); } g.closePath(); g.stroke();
+  }
+  // コックピットの窓枠（遠近ライン）
+  g.strokeStyle = rgba(CY, 0.35); g.lineWidth = u * 0.25;
+  const fx = W * 0.07, fy = H * 0.1;
+  g.beginPath();
+  g.moveTo(0, fy * 0.6); g.lineTo(fx * 1.6, fy * 1.3); g.lineTo(W - fx * 1.6, fy * 1.3); g.lineTo(W, fy * 0.6);
+  g.moveTo(0, H - fy * 0.3); g.lineTo(fx * 2, H - fy * 1.1); g.lineTo(W - fx * 2, H - fy * 1.1); g.lineTo(W, H - fy * 0.3);
+  g.stroke();
+  // 左右の目盛りスケール
+  for (const side of [0, 1]) {
+    const x0 = side ? W - u * 2.2 : u * 2.2, dir = side ? -1 : 1;
+    for (let i = 0; i < 40; i++) {
+      const y = H * 0.2 + i * (H * 0.6 / 40), long = i % 5 === 0;
+      g.fillStyle = rgba(CY, long ? 0.8 : 0.35);
+      g.fillRect(x0, y, dir * u * (long ? 2.2 : 1.1), Math.max(1, u * 0.18));
+    }
+  }
+  // 周辺ビネット
+  const vg = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.7);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,4,12,.75)");
+  g.fillStyle = vg; g.fillRect(0, 0, W, H);
+}
+addEventListener("resize", resize); resize();
+
+// ---- パーツ ----
+function ring(x, y, r, c, a, w) { ctx.strokeStyle = rgba(c, a); ctx.lineWidth = w; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.stroke(); }
+function arc(x, y, r, s, e, c, a, w) { ctx.strokeStyle = rgba(c, a); ctx.lineWidth = w; ctx.beginPath(); ctx.arc(x, y, r, s, e); ctx.stroke(); }
+function text(t, x, y, size, c, a, align = "left", font = "Share Tech Mono") {
+  ctx.fillStyle = rgba(c, a); ctx.font = `${size}px "${font}", "Noto Sans JP", monospace`; ctx.textAlign = align; ctx.textBaseline = "middle"; ctx.fillText(t, x, y);
+}
+
+function centerReticle(t, col) {
+  const { cx, cy, R, u } = L, e = energy;
+  // 外側の発光リング
+  ctx.save();
+  ctx.shadowColor = rgba(col, 0.9); ctx.shadowBlur = u * (2 + e * 3);
+  ring(cx, cy, R, col, 0.85, u * 0.9);
+  ctx.restore();
+  ring(cx, cy, R * 1.06, col, 0.3, u * 0.15);
+  // 目盛りと数字
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(t * 0.03);
+  for (let i = 0; i < 144; i++) {
+    const a = i / 144 * TAU, long = i % 12 === 0;
+    ctx.strokeStyle = rgba(col, long ? 0.8 : 0.3); ctx.lineWidth = u * (long ? 0.25 : 0.12);
+    ctx.beginPath(); ctx.moveTo(Math.cos(a) * R * 0.92, Math.sin(a) * R * 0.92); ctx.lineTo(Math.cos(a) * R * (long ? 0.86 : 0.895), Math.sin(a) * R * (long ? 0.86 : 0.895)); ctx.stroke();
+  }
+  ctx.restore();
+  // 上部の白い弧
+  arc(cx, cy, R * 0.8, -Math.PI * 0.82, -Math.PI * 0.18, WH, 0.85, u * 0.9);
+  // 回転アーク群
+  [[0.74, 0.35, 1.1, 0.3], [0.66, -0.6, 0.6, 0.5], [0.58, 1.2 + e * 2.5, 1.5, 0.15], [0.5, -1.6 * (0.4 + e), 0.4, 0.45]].forEach(([rr, sp, len, w], k) => {
+    for (let j = 0; j < 3; j++) { const s = t * sp + j * TAU / 3 + k; arc(cx, cy, R * rr, s, s + len, col, 0.35 + e * 0.5, u * w); }
+  });
+  ring(cx, cy, R * 0.62, col, 0.18, u * 0.12);
+  ring(cx, cy, R * 0.44, col, 0.25, u * 0.12);
+  // 放射線
+  ctx.strokeStyle = rgba(col, 0.12); ctx.lineWidth = u * 0.1;
+  for (let i = 0; i < 24; i++) { const a = i / 24 * TAU; ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * R * 0.2, cy + Math.sin(a) * R * 0.2); ctx.lineTo(cx + Math.cos(a) * R * 0.44, cy + Math.sin(a) * R * 0.44); ctx.stroke(); }
+  // ブラケット
+  const b = R * 0.3, bl = R * 0.08;
+  ctx.strokeStyle = rgba(col, 0.9); ctx.lineWidth = u * 0.35;
+  for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    ctx.beginPath(); ctx.moveTo(cx + sx * b, cy + sy * (b - bl)); ctx.lineTo(cx + sx * b, cy + sy * b); ctx.lineTo(cx + sx * (b - bl), cy + sy * b); ctx.stroke();
+  }
+  // 下側の台座シェイプ
+  ctx.strokeStyle = rgba(col, 0.7); ctx.lineWidth = u * 0.3;
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(cx + s * R * 0.72, cy + R * 0.28); ctx.lineTo(cx + s * R * 0.42, cy + R * 0.28); ctx.lineTo(cx + s * R * 0.3, cy + R * 0.44); ctx.lineTo(cx + s * R * 0.12, cy + R * 0.44);
+    ctx.stroke();
+  }
+  // 波形リング
+  ctx.beginPath();
+  for (let i = 0; i <= 200; i++) {
+    const a = i / 200 * TAU, wob = Math.sin(a * 7 + t * 5) * Math.sin(a * 3 - t * 3.3) * e * R * 0.07, r = R * 0.34 + wob;
+    ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+  }
+  ctx.strokeStyle = rgba(col, 0.9); ctx.lineWidth = u * 0.25; ctx.stroke();
+  // コア
+  const pr = R * (0.2 + Math.sin(t * (2 + e * 7)) * 0.012 * (1 + e * 3) + e * 0.03);
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, pr * 1.8);
+  g.addColorStop(0, "rgba(240,252,255,1)"); g.addColorStop(0.25, rgba(col, 0.9)); g.addColorStop(1, rgba(col, 0));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, pr * 1.8, 0, TAU); ctx.fill();
+  ctx.restore();
+  text("A", cx, cy, R * 0.1, [2, 30, 60], 0.8, "center", "Orbitron");
+  // 右上の数値
+  text((16 + Math.sin(t * 0.7) * 0.4).toFixed(1), cx + R * 0.62, cy - R * 0.6, u * 1.9, WH, 0.9);
+  text((18 + Math.cos(t * 0.5) * 0.3).toFixed(1), cx + R * 0.62, cy - R * 0.5, u * 1.9, WH, 0.9);
+  text((28 + e * 40).toFixed(0), cx + R * 0.34, cy - R * 0.9, u * 1.9, WH, 0.9);
+  // 左右の状態ラベル
+  const lab = { idle: "Standby", listening: "Listening", thinking: "Processing", speaking: "Responding" }[state];
+  const ly = cy - R * 0.08, lw = R * 0.55;
+  for (const s of [-1, 1]) {
+    const x0 = cx + s * R * 0.95;
+    ctx.strokeStyle = rgba(col, 0.7); ctx.lineWidth = u * 0.15;
+    ctx.beginPath(); ctx.moveTo(x0, ly + u * 1.4); ctx.lineTo(x0 + s * lw, ly + u * 1.4); ctx.stroke();
+    if (L.land) text(lab + (state === "idle" ? "" : " …"), x0 + s * lw / 2, ly, u * 1.6, WH, 0.85, "center");
+  }
+}
+
+function statusLine(col) {
+  const { cx, cy, R, u } = L;
+  const c = statusCls.includes("err") ? RD : statusCls.includes("warn") ? AM : col;
+  text(statusText, cx, cy + R * 1.18, u * (L.land ? 2 : 3.2), c, 0.95, "center", /[぀-ヿ一-鿿]/.test(statusText) ? "Noto Sans JP" : "Orbitron");
+}
+
+function radar(t, col) {
+  const { x, y, r } = L.radar, u = L.u;
+  ctx.save(); ctx.shadowColor = rgba(col, 0.8); ctx.shadowBlur = u * 1.5; ring(x, y, r, col, 0.8, u * 0.5); ctx.restore();
+  for (let i = 1; i <= 4; i++) ring(x, y, r * i / 4.6, col, 0.18, u * 0.1);
+  // 等高線っぽい歪んだリング
+  for (let k = 0; k < 5; k++) {
+    ctx.beginPath();
+    for (let i = 0; i <= 60; i++) { const a = i / 60 * TAU, rr = r * (0.25 + k * 0.12) * (1 + Math.sin(a * 3 + k) * 0.12); ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+    ctx.strokeStyle = rgba(col, 0.22); ctx.lineWidth = u * 0.1; ctx.stroke();
+  }
+  const sw = t * (0.9 + energy);
+  const g = ctx.createConicGradient ? ctx.createConicGradient(sw - 1.1, x, y) : null;
+  if (g) { g.addColorStop(0, rgba(col, 0)); g.addColorStop(0.17, rgba(col, 0.45)); g.addColorStop(0.175, rgba(col, 0)); ctx.fillStyle = g; }
+  else ctx.fillStyle = rgba(col, 0.15);
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, r * 0.96, sw - 1.1, sw); ctx.closePath(); ctx.fill();
+  [[0.3, 0.4], [1.2, 0.55], [2.1, 0.35], [4.4, 0.7]].forEach(([a, d]) => {
+    const vis = 0.3 + 0.7 * Math.max(0, Math.cos(((sw - a) % TAU + TAU) % TAU * 0.6));
+    ctx.fillStyle = rgba(RD, vis); ctx.beginPath(); ctx.arc(x + Math.cos(a) * r * d, y + Math.sin(a) * r * d, u * 0.55, 0, TAU); ctx.fill();
+  });
+  text("12.1", x - r * 0.5, y - r * 0.8, u * 1.3, WH, 0.8);
+  text("16.7", x - r * 1.18, y + r * 0.1, u * 1.3, WH, 0.8);
+  if (L.land) text("ARTIFICIAL INTELLIGENCE", x - r * 0.85, y + r * 1.25, u * 1.3, WH, 0.8);
+}
+
+function globe(t, col) {
+  const { x, y, r } = L.globe, u = L.u, rot = t * 0.4;
+  ring(x, y, r, col, 0.6, u * 0.2);
+  ctx.strokeStyle = rgba(col, 0.35); ctx.lineWidth = u * 0.1;
+  for (let i = 1; i < 6; i++) { const lat = -Math.PI / 2 + i * Math.PI / 6, yy = y + Math.sin(lat) * r, rr = Math.cos(lat) * r; ctx.beginPath(); ctx.ellipse(x, yy, rr, rr * 0.18, 0, 0, TAU); ctx.stroke(); }
+  for (let i = 0; i < 8; i++) { const a = rot + i * Math.PI / 8; ctx.beginPath(); ctx.ellipse(x, y, Math.abs(Math.cos(a)) * r, r, 0, 0, TAU); ctx.stroke(); }
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, 0, x, y, r); g.addColorStop(0, rgba(col, 0.25)); g.addColorStop(1, rgba(col, 0));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.restore();
+  text("13.5", x + r * 0.2, y - r * 0.05, u * 1.2, WH, 0.9);
+  if (L.land) text("Scanning...", x - r * 0.9, y - r * 1.5, u * 1.4, WH, 0.8);
+}
+
+function gauges(t, col) {
+  const { x, y, r, n, gap } = L.gauges, u = L.u;
+  for (let i = 0; i < n; i++) {
+    const gx = x + i * r * gap + r;
+    ring(gx, y, r, WH, 0.75, u * 0.2);
+    for (let k = 0; k < 12; k++) { const a = k / 12 * TAU; ctx.strokeStyle = rgba(WH, 0.5); ctx.lineWidth = u * 0.08; ctx.beginPath(); ctx.moveTo(gx + Math.cos(a) * r * 0.75, y + Math.sin(a) * r * 0.75); ctx.lineTo(gx + Math.cos(a) * r * 0.9, y + Math.sin(a) * r * 0.9); ctx.stroke(); }
+    const a = -Math.PI / 2 + Math.sin(t * (0.6 + i * 0.23) + i) * (1 + energy * 1.5);
+    ctx.strokeStyle = rgba(WH, 0.95); ctx.lineWidth = u * 0.2; ctx.beginPath(); ctx.moveTo(gx, y); ctx.lineTo(gx + Math.cos(a) * r * 0.8, y + Math.sin(a) * r * 0.8); ctx.stroke();
+  }
+  text((2 + Math.sin(t * 0.3) * 0.2).toFixed(1), x + r * gap * 2 + r, y + r * 1.7, u * 1.3, WH, 0.8, "center");
+  text("7.1", x + r * gap + r * 1.4, y - r * 0.1, u * 1.1, WH, 0.8);
+}
+
+function topCircles(t, col) {
+  const { y, r, n } = L.tops, u = L.u, gap = r * 2.5, x0 = W / 2 - gap * (n - 1) / 2;
+  for (let i = 0; i < n; i++) {
+    const on = state !== "idle" && Math.floor(t * 4) % n === i;
+    ctx.save(); ctx.shadowColor = rgba(col, 0.9); ctx.shadowBlur = on ? u * 2 : u * 0.8;
+    ring(x0 + i * gap, y, r, col, on ? 1 : 0.7, u * 0.35); ctx.restore();
+  }
+}
+
+function wave(t, col) {
+  if (!L.wave) return;
+  const { x, y, w, h } = L.wave, u = L.u;
+  ctx.strokeStyle = rgba(col, 0.4); ctx.lineWidth = u * 0.12; ctx.strokeRect(x, y, w, h);
+  for (let k = 0; k < 2; k++) {
+    ctx.beginPath();
+    for (let i = 0; i <= 80; i++) { const px = x + i / 80 * w; const py = y + h / 2 + Math.sin(i / 80 * TAU * (3 + k) + t * (3 + k * 2)) * h * (0.15 + energy * 0.28) * (k ? 0.6 : 1); ctx.lineTo(px, py); }
+    ctx.strokeStyle = rgba(k ? WH : col, 0.8); ctx.lineWidth = u * 0.18; ctx.stroke();
+  }
+  text("LOAD " + Math.round(40 + energy * 55) + "%", x + w + u, y + u, u * 1.2, WH, 0.8);
+}
+
+function gear(t, col) {
+  const { x, y, r } = L.gear, u = L.u;
+  ring(x, y, r, col, 0.75, u * 0.3);
+  ring(x, y, r * 0.82, col, 0.3, u * 0.12);
+  ctx.save(); ctx.translate(x, y); ctx.rotate(-t * (0.3 + energy));
+  for (let i = 0; i < 36; i++) { const a = i / 36 * TAU; ctx.fillStyle = rgba(col, i % 3 ? 0.35 : 0.8); ctx.fillRect(Math.cos(a) * r * 0.66 - u * 0.25, Math.sin(a) * r * 0.66 - u * 0.25, u * 0.5, u * 0.5); }
+  ctx.restore();
+  ring(x, y, r * 0.42, WH, 0.9, u * 0.35);
+  ring(x, y, r * 0.2, WH, 0.9, u * 0.35);
+  ctx.strokeStyle = rgba(WH, 0.9); ctx.lineWidth = u * 0.3;
+  for (let i = 0; i < 8; i++) { const a = i / 8 * TAU + t * 0.2; ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * r * 0.2, y + Math.sin(a) * r * 0.2); ctx.lineTo(x + Math.cos(a) * r * 0.42, y + Math.sin(a) * r * 0.42); ctx.stroke(); }
+  // 外周のノード
+  for (let i = 0; i < 8; i++) {
+    const a = i / 8 * TAU + 0.4, nx = x + Math.cos(a) * r * 1.25, ny = y + Math.sin(a) * r * 1.25;
+    ctx.strokeStyle = rgba(col, 0.35); ctx.lineWidth = u * 0.1; ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r); ctx.lineTo(nx, ny); ctx.stroke();
+    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = rgba(col, 0.9); ctx.beginPath(); ctx.arc(nx, ny, u * 0.6, 0, TAU); ctx.fill(); ctx.restore();
+  }
+  text("451", x + r * 0.15, y - r * 0.85, u * 1.3, WH, 0.9);
+}
+
+function bars(t, col) {
+  if (!L.bars) return;
+  const { x, y, w, h } = L.bars, u = L.u, n = 8;
+  ctx.fillStyle = rgba(col, 0.08); ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = rgba(col, 0.4); ctx.lineWidth = u * 0.12; ctx.strokeRect(x, y, w, h);
+  for (let i = 0; i < n; i++) {
+    const v = 0.3 + 0.5 * (0.5 + 0.5 * Math.sin(t * (0.8 + i * 0.3) + i * 1.7)) * (0.6 + energy * 0.6);
+    const bw = w / n * 0.5, bx = x + (i + 0.25) * w / n;
+    ctx.fillStyle = rgba(col, 0.75); ctx.fillRect(bx, y + h - v * h * 0.9, bw, v * h * 0.9);
+  }
+}
+
+function nodes(t, col) {
+  if (!L.nodes) return;
+  const { x, y, w } = L.nodes, u = L.u, n = 6;
+  ctx.strokeStyle = rgba([80, 120, 255], 0.9); ctx.lineWidth = u * 0.25;
+  ctx.beginPath(); ctx.arc(x, y - u * 3, u * 2.5, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x, y - u * 0.5); ctx.lineTo(x + w, y - u * 0.5); ctx.stroke();
+  for (let i = 1; i <= n; i++) { ctx.beginPath(); ctx.arc(x + i * w / n, y - u * 0.5, u * 0.9, 0, TAU); ctx.fillStyle = rgba(CY.map(v => v * 0.1), 1); ctx.fill(); ctx.stroke(); }
+}
+
+function readout(t, col) {
+  if (!L.read) return;
+  const { x, y } = L.read, u = L.u;
+  ctx.strokeStyle = rgba(col, 0.5); ctx.lineWidth = u * 0.12; ctx.strokeRect(x, y - u * 2, u * 14, u * 7);
+  text("Scan", x + u, y - u * 0.8, u * 1.2, col, 0.9);
+  text((78.1 + Math.sin(t) * 0.3).toFixed(1), x + u * 8, y - u * 0.8, u * 1.5, WH, 0.95);
+  ctx.fillStyle = rgba(RD, 0.35); ctx.fillRect(x + u, y + u * 1.4, u * 12, u * 2);
+  text(state === "idle" ? "STANDBY" : "ACTIVE", x + u * 7, y + u * 2.4, u * 1.2, RD, 0.95, "center");
+  const mdl = (cfg.model || "").replace("claude-", "").toUpperCase();
+  text("MODEL " + mdl, x, y + u * 7, u * 1.2, WH, 0.7);
+  text("TEMP 36.6°", x, y + u * 9, u * 1.2, WH, 0.7);
+}
+
+function draw(ms) {
+  const t = reduce ? 0 : ms / 1000;
+  const lvl = readLevel();
+  const target = state === "speaking" && analyser ? 0.45 + lvl * 0.9 : { idle: 0.12, listening: 0.6, thinking: 0.45, speaking: 0.95 }[state];
+  energy += (target - energy) * (analyser && state === "speaking" ? 0.25 : 0.06);
+  const col = state === "listening" ? AM : CY;
+  ctx.drawImage(bgCanvas, 0, 0);
+  ctx.lineCap = "round";
+  wave(t, col); gauges(t, col); topCircles(t, col); radar(t, col); globe(t, col);
+  gear(t, col); bars(t, col); nodes(t, col); readout(t, col);
+  centerReticle(t, col); statusLine(col);
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
