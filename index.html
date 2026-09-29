@@ -494,10 +494,8 @@ async function ask(text) {
     };
     if (cfg.model !== "claude-haiku-4-5") {
       params.output_config = { effort: "low" };
-      params.betas = ["server-side-fallback-2026-07-01"];
-      params.fallbacks = "default";
     }
-    const stream = client.beta.messages.stream(params, { signal: abortCtl.signal });
+    const stream = client.messages.stream(params, { signal: abortCtl.signal });
 
     for await (const ev of stream) {
       if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
@@ -524,7 +522,10 @@ async function ask(text) {
       : status === 429 ? "少し混み合っています。数秒後にもう一度どうぞ。"
       : status === 400 && /credit|billing/i.test(err?.message || "") ? "APIのクレジット残高が足りないようです。"
       : "通信エラーです。接続を確認してください。";
+    console.error("[JARVIS] API error", status, err);
+    const detail = (err?.error?.error?.message || err?.message || String(err)).slice(0, 200);
     caption("ai", msg);
+    caption("ai", "詳細: " + (status ? "[" + status + "] " : "") + detail);
     speak(msg);
     setState("speaking", "ERROR", "err");
   } finally {
