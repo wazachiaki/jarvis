@@ -459,12 +459,14 @@ function startListening() {
   };
   recog.onerror = (e) => {
     if (e.error === "not-allowed" || e.error === "service-not-allowed") setState("idle", "マイクを許可してください", "err");
-    else if (e.error === "no-speech") setState("idle", "TAP TO TALK");
+    else if (e.error === "no-speech" && !cfg.handsFree) setState("idle", "TAP TO TALK");
   };
   recog.onend = () => {
     recog = null;
     const text = finalText.trim();
     if (text) ask(text);
+    // 会話モード中は、無音で切れても自動で聞き直す（タップ不要で会話を継続）
+    else if (cfg.handsFree && state === "listening" && !document.hidden) setTimeout(() => { if (!recog && state === "listening") startListening(); }, 150);
     else if (state === "listening") setState("idle", "TAP TO TALK");
   };
   try { recog.start(); } catch { setState("idle", "TAP TO TALK"); }
@@ -514,7 +516,10 @@ async function ask(text) {
     }
     const final = await stream.finalMessage();
     if (buf.trim()) speak(buf);
-    history.push({ role: "assistant", content: final.content });
+    // 思考ブロック（thinking）は履歴に残さず、返事の文章だけを保存する
+    const replyText = (final.content || []).filter((b) => b.type === "text").map((b) => b.text).join("") || full;
+    if (replyText.trim()) history.push({ role: "assistant", content: replyText });
+    else history.pop();
     if (final.stop_reason === "refusal" && !full) { speak("申し訳ありません、その件にはお答えできません。"); }
   } catch (err) {
     if (err?.name === "AbortError" || abortCtl === null) return;
