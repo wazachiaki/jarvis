@@ -26,6 +26,7 @@
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { height: 100%; margin: 0; }
   body {
     background: var(--bg); color: var(--fg); font-family: var(--body);
@@ -78,6 +79,48 @@
   .row { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
   .btn { font: 500 13px var(--body); border-radius: 4px; padding: 10px 16px; cursor: pointer; border: 1px solid var(--line); background: transparent; color: var(--fg); }
   .btn.primary { background: var(--cyan); color: #02121d; border-color: var(--cyan); }
+  .pill .badge { display: inline-block; min-width: 16px; padding: 0 5px; margin-left: 6px; border-radius: 8px; background: var(--red); color: #fff; font-size: 10px; line-height: 16px; text-align: center; }
+  .pill .badge:empty { display: none; }
+
+  /* 本部パネル：右からせり出す作戦ボード */
+  .hq {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(520px, 100vw); z-index: 20;
+    background: var(--panel); border-left: 1px solid var(--line); backdrop-filter: blur(12px);
+    display: grid; grid-template-rows: auto auto 1fr; user-select: text;
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px calc(env(safe-area-inset-bottom, 0px) + 12px);
+  }
+  .hq-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .hq-head h2 { font-family: var(--display); font-size: 13px; letter-spacing: .3em; color: var(--cyan); margin: 0; }
+  .hq-sync { font: 10px var(--mono); color: var(--dim); }
+  .tabs { display: flex; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
+  .tab { font: 12px var(--body); color: var(--dim); background: transparent; border: 1px solid var(--line); padding: 6px 12px; cursor: pointer; }
+  .tab[aria-selected="true"] { color: var(--cyan-hi); border-color: var(--cyan); background: rgba(63,212,255,.12); }
+  .hq-body { overflow-y: auto; min-height: 0; display: grid; gap: 12px; align-content: start; }
+  .board { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .board th { font: 10px var(--mono); letter-spacing: .12em; color: var(--dim); text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+  .board td { padding: 9px 4px; border-bottom: 1px solid rgba(80,210,255,.1); vertical-align: top; }
+  .board tr { cursor: pointer; }
+  .board tr:hover td { background: rgba(63,212,255,.06); }
+  .board .due { font-family: var(--mono); white-space: nowrap; }
+  .due.late { color: var(--red); }
+  .chip { display: inline-block; font-size: 11px; padding: 2px 8px; border: 1px solid var(--line); white-space: nowrap; }
+  .chip.jarvis { color: var(--cyan-hi); border-color: var(--cyan); }
+  .chip.you { color: var(--amber); border-color: var(--amber); }
+  .chip.review { color: #fff; background: var(--red); border-color: var(--red); }
+  .chip.done { color: var(--dim); }
+  .card { border: 1px solid var(--line); padding: 12px; display: grid; gap: 10px; background: rgba(0,0,0,.25); }
+  .card h3 { margin: 0; font-size: 15px; }
+  .meta { font-size: 12px; color: var(--dim); display: flex; gap: 10px; flex-wrap: wrap; }
+  .plan { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.7; }
+  .plan .ok { color: var(--dim); text-decoration: line-through; }
+  .doc { white-space: pre-wrap; font: 13px/1.7 var(--body); background: rgba(0,0,0,.3); border: 1px solid var(--line); padding: 12px; max-height: 50vh; overflow: auto; margin: 0; }
+  .hq textarea, .hq input, .hq select { font: 13px var(--body); color: var(--fg); background: rgba(0,0,0,.35); border: 1px solid var(--line); border-radius: 4px; padding: 8px; width: 100%; }
+  .hq textarea { min-height: 70px; resize: vertical; }
+  .hq textarea.rules { min-height: 50vh; font-family: var(--mono); }
+  .form { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
+  .form .wide { grid-column: 1 / -1; }
+  .empty { color: var(--dim); font-size: 13px; line-height: 1.7; }
+  .toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 64px); transform: translateX(-50%); z-index: 30; background: var(--panel); border: 1px solid var(--cyan); padding: 10px 16px; font-size: 13px; max-width: calc(100vw - 32px); }
 </style>
 </head>
 <body>
@@ -91,11 +134,29 @@
 <footer class="overlay">
   <div class="captions" id="captions" aria-live="polite"></div>
   <div class="controls">
+    <button class="pill" id="openHQ">本部<span class="badge" id="hqBadge"></span></button>
     <button class="pill" id="handsFree" aria-pressed="true">会話モード</button>
+    <button class="pill" id="voiceOut" aria-pressed="false">Jarvisの声</button>
     <button class="pill" id="clearMem">記憶リセット</button>
   </div>
 </footer>
 <div id="status" hidden></div>
+<div class="toast" id="toast" hidden></div>
+
+<aside class="hq" id="hq" hidden aria-label="本部">
+  <div class="hq-head">
+    <h2>HEADQUARTERS</h2>
+    <span class="hq-sync" id="hqSync"></span>
+    <button class="iconbtn" id="closeHQ" aria-label="閉じる">✕</button>
+  </div>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="board" aria-selected="true">本部</button>
+    <button class="tab" role="tab" data-tab="rules" aria-selected="false">ルール</button>
+    <button class="tab" role="tab" data-tab="log" aria-selected="false">修正ログ</button>
+    <button class="tab" role="tab" data-tab="outputs" aria-selected="false">成果物</button>
+  </div>
+  <div class="hq-body" id="hqBody"></div>
+</aside>
 
 <dialog id="settings">
   <h2>SETTINGS</h2>
@@ -174,6 +235,15 @@
     <label for="rate">話す速さ <span id="rateVal"></span></label>
     <input id="rate" type="range" min="0.7" max="1.6" step="0.05">
   </div>
+  <div class="field">
+    <label for="ghRepo">本部のリポジトリ</label>
+    <input id="ghRepo" type="text" placeholder="wazachiaki/jarvis-hq">
+  </div>
+  <div class="field">
+    <label for="ghToken">GitHubトークン（本部の読み書き用）</label>
+    <input id="ghToken" type="password" placeholder="github_pat_..." autocomplete="off">
+    <div class="hint">GitHubの「Settings → Developer settings → Fine-grained tokens」で、本部のリポジトリだけ・Contents を Read and write にして発行。空のままだと、本部はこの端末の中だけに保存されます。</div>
+  </div>
   <div class="row">
     <button class="btn" id="testVoice">声をテスト</button>
     <button class="btn primary" id="saveSettings">保存</button>
@@ -204,6 +274,9 @@ const cfg = {
   openaiKey: cleanKey(store.get("openaiKey", "")),
   openaiVoice: store.get("openaiVoice", "onyx"),
 };
+cfg.voiceOut = store.get("voiceOut", "0") === "1";
+cfg.ghRepo = store.get("ghRepo", "wazachiaki/jarvis-hq").trim();
+cfg.ghToken = cleanKey(store.get("ghToken", ""));
 const TTS_KEYS = ["ttsEngine", "elevenKey", "elevenVoice", "elevenModel", "openaiKey", "openaiVoice"];
 
 const $ = (id) => document.getElementById(id);
@@ -212,13 +285,24 @@ const statusEl = $("status"), capsEl = $("captions");
 function systemPrompt() {
   return `あなたはJARVIS。映画アイアンマンのAIアシスタントのように、有能で落ち着いていて、少しウィットのある執事風の口調で話す。
 ユーザーのことは「${cfg.userName || "ボス"}」と呼ぶ。
-これは音声会話で、あなたの返答はそのまま読み上げられる。
+ユーザーは声で話しかけ、あなたの返事は画面に文字で表示される（読み上げられることもある）。
 - 日本語の話し言葉で答える。
 - 基本は1〜3文。詳しく聞かれたときだけ長くする。
 - 見出し、箇条書き、記号、絵文字、URL、マークダウンは使わない。
 - 数字や英語は読み上げやすい形で書く。
 - 音声認識の誤変換がありうるので、文脈から意図を汲み取る。
-現在時刻: ${new Date().toLocaleString("ja-JP")}`;
+
+あなたは「本部」で仕事を管理している。本部の仕事は、毎日9時・12時・17時の定例で、裏で動くJarvisが自分で計画して進め、作る係とチェックする係で仕上げ、終わったらユーザーのスマホに通知する。
+仕事を頼まれたら、期限から逆算して間に合うかを一言で判断して伝え（例：「木曜なら今日から動かないと間に合いません。次の定例から始めます」）、返事の最後に次の形の行を付ける。この行は画面には出ない。
+<<TASK {"title":"短い仕事名","due":"YYYY-MM-DD","owner":"jarvis","notes":"頼まれた内容の要点"}>>
+ユーザーが自分でやる仕事なら owner は "you"。期限が言われなければ due は空文字。
+仕事が終わった・OKと言われたら <<DONE {"id":"仕事のid"}>>、成果物を直してほしいと言われたら <<FIX {"id":"仕事のid","feedback":"直してほしい点"}>> を付ける。
+曜日は今日から一番近いその曜日として日付に直す。
+
+いまの本部：
+${hq.summary()}
+
+現在時刻: ${new Date().toLocaleString("ja-JP", { weekday: "short", year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
 }
 
 // ---------- 状態 ----------
@@ -410,7 +494,8 @@ function stopTTS() {
   player.pause();
 }
 
-function speak(text) {
+function speak(text, force = false) {
+  if (!cfg.voiceOut && !force) return;
   text = text.replace(/[*#`_>|~\-]{1,}/g, " ").trim();
   if (!text) return;
   if (hqReady()) return speakHQ(text);
@@ -480,6 +565,231 @@ function stopAll() {
   speakQueue = 0;
 }
 
+// ---------- 本部（仕事・ルール・修正ログ）----------
+// GitHubトークンがあれば本部リポジトリを読み書きし、裏の定例Jarvisと共有する。
+// なければこの端末の中だけに保存する。
+const b64encode = (text) => { let bin = ""; for (const b of new TextEncoder().encode(text)) bin += String.fromCharCode(b); return btoa(bin); };
+const b64decode = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, "")), (c) => c.charCodeAt(0)));
+const ghReady = () => !!(cfg.ghToken && cfg.ghRepo);
+
+async function gh(path, opts = {}) {
+  const url = `https://api.github.com/repos/${cfg.ghRepo}/contents/${path.split("/").map(encodeURIComponent).join("/")}`;
+  const res = await fetch(url + (opts.method ? "" : `?t=${Date.now()}`), {
+    ...opts,
+    headers: { Authorization: `Bearer ${cfg.ghToken}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+  });
+  if (!res.ok) { const e = new Error(`GitHub ${res.status}`); e.status = res.status; throw e; }
+  return res.json();
+}
+async function readFile(path) {
+  if (!ghReady()) return { text: store.get("hq:" + path, null), sha: null };
+  try { const j = await gh(path); return { text: b64decode(j.content), sha: j.sha }; }
+  catch (e) { if (e.status === 404) return { text: null, sha: null }; throw e; }
+}
+async function writeFile(path, text, sha, message) {
+  if (!ghReady()) { store.set("hq:" + path, text); return; }
+  await gh(path, { method: "PUT", body: JSON.stringify({ message, content: b64encode(text), ...(sha ? { sha } : {}) }) });
+}
+
+const DEFAULT_RULES = `# RULES.md\n\n## 目的\nこの事業で何を達成するか。\n\n## やってはいけないこと\n絶対にしないこと。\n\n## 過去の失敗\n同じミスをしないための記録。\n`;
+const todayISO = (d = new Date()) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const newId = () => "t-" + todayISO().replace(/-/g, "") + "-" + Math.random().toString(36).slice(2, 6);
+
+const hq = {
+  tasks: JSON.parse(store.get("hqCache", "[]") || "[]"),
+  rules: "", fixlog: "", synced: null, error: "",
+  async load() {
+    try {
+      const [t, r, l] = await Promise.all([readFile("tasks.json"), readFile("RULES.md"), readFile("修正ログ.md")]);
+      this.tasks = t.text ? (JSON.parse(t.text).tasks || []) : [];
+      this.rules = r.text ?? DEFAULT_RULES;
+      this.fixlog = l.text ?? "";
+      this.synced = new Date(); this.error = "";
+      store.set("hqCache", JSON.stringify(this.tasks));
+    } catch (e) {
+      this.error = e.status === 401 ? "GitHubトークンが無効です" : e.status === 404 ? "本部リポジトリが見つかりません" : "本部に接続できません";
+    }
+    renderHQ();
+  },
+  // tasks.json を読み直してから変更を当てる（裏のJarvisの更新を消さないため）
+  async update(mutate, message) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const cur = await readFile("tasks.json");
+      const data = cur.text ? JSON.parse(cur.text) : { tasks: [] };
+      mutate(data.tasks);
+      try {
+        await writeFile("tasks.json", JSON.stringify(data, null, 2) + "\n", cur.sha, message);
+        this.tasks = data.tasks; this.synced = new Date(); this.error = "";
+        store.set("hqCache", JSON.stringify(this.tasks));
+        renderHQ();
+        return true;
+      } catch (e) { if (e.status !== 409 && e.status !== 422) { this.error = "保存できませんでした"; renderHQ(); throw e; } }
+    }
+    return false;
+  },
+  turn(t) {
+    if (t.status === "done") return { label: "完了", cls: "done" };
+    if (t.status === "review") return { label: "あなた（チェック）", cls: "review" };
+    if (t.owner === "you") return { label: "あなた", cls: "you" };
+    return { label: "Jarvis", cls: "jarvis" };
+  },
+  open() { return this.tasks.filter((t) => t.status !== "done"); },
+  summary() {
+    const open = this.open();
+    if (!open.length) return "（仕事はまだない）";
+    return open.map((t) => `- id:${t.id} / ${t.title} / 期限:${t.due || "なし"} / 誰の番:${this.turn(t).label} / 状態:${t.status}`).join("\n");
+  },
+};
+
+function toast(msg) {
+  const el = $("toast"); el.textContent = msg; el.hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(() => (el.hidden = true), 4000);
+}
+
+// 会話の返事に付いた <<TASK …>> などの指示を本部に反映する
+const TAG_RE = /<<(TASK|DONE|FIX)\s*(\{[\s\S]*?\})\s*>>/g;
+const stripTags = (text) => text.replace(TAG_RE, "").replace(/<<[\s\S]*$/, "").trim();
+async function applyTags(text) {
+  const acts = [...text.matchAll(TAG_RE)].map((m) => { try { return [m[1], JSON.parse(m[2])]; } catch { return null; } }).filter(Boolean);
+  if (!acts.length) return;
+  const now = new Date().toISOString();
+  const notes = [];
+  try {
+    await hq.update((tasks) => {
+      for (const [kind, a] of acts) {
+        if (kind === "TASK" && a.title) {
+          tasks.push({ id: newId(), title: a.title, notes: a.notes || "", due: a.due || "", owner: a.owner === "you" ? "you" : "jarvis",
+            status: "todo", plan: [], output: "", feedback: "", log: [{ at: now, by: "you", text: "声で依頼" }], created: now });
+          notes.push(`本部に追加：${a.title}`);
+        }
+        const t = a.id && tasks.find((x) => x.id === a.id);
+        if (kind === "DONE" && t) { t.status = "done"; t.log.push({ at: now, by: "you", text: "完了" }); notes.push(`完了：${t.title}`); }
+        if (kind === "FIX" && t) { t.status = "fix"; t.feedback = a.feedback || ""; t.log.push({ at: now, by: "you", text: "直してほしい：" + t.feedback }); notes.push(`直しを依頼：${t.title}`); }
+      }
+    }, "HUDから: " + acts.map(([k]) => k).join(","));
+    notes.forEach((n) => caption("ai", "（" + n + "）"));
+  } catch { caption("ai", "（本部に保存できませんでした。⚙のGitHub設定を確認してください）"); }
+}
+
+// ---- 本部パネルの描画 ----
+let hqTab = "board", hqDetail = null;
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtDue = (d) => d ? new Date(d + "T00:00:00").toLocaleDateString("ja-JP", { month: "numeric", day: "numeric", weekday: "short" }) : "—";
+
+function renderHQ() {
+  const reviewN = hq.tasks.filter((t) => t.status === "review").length;
+  $("hqBadge").textContent = reviewN || "";
+  $("hqSync").textContent = hq.error ? "⚠ " + hq.error : !ghReady() ? "この端末だけに保存中" : hq.synced ? "同期 " + hq.synced.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "";
+  if ($("hq").hidden) return;
+  document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === hqTab)));
+  const body = $("hqBody");
+  if (hqTab === "board") body.innerHTML = hqDetail ? detailHTML(hq.tasks.find((t) => t.id === hqDetail)) : boardHTML();
+  if (hqTab === "rules") body.innerHTML = `<textarea class="rules" id="rulesText" aria-label="ルール">${esc(hq.rules)}</textarea><div class="row"><button class="btn primary" id="saveRules">ルールを保存</button></div>`;
+  if (hqTab === "log") body.innerHTML = hq.fixlog.trim() ? `<pre class="doc">${esc(hq.fixlog)}</pre>` : `<p class="empty">まだ直された記録はありません。チェック係やあなたに直された内容がここに貯まり、同じ指摘が2回出るとルールに1行足されます。</p>`;
+  if (hqTab === "outputs") {
+    const outs = hq.tasks.filter((t) => t.output);
+    body.innerHTML = outs.length ? `<table class="board"><tr><th>仕事</th><th>状態</th></tr>${outs.map((t) => `<tr data-open="${esc(t.id)}"><td>${esc(t.title)}</td><td><span class="chip ${hq.turn(t).cls}">${esc(hq.turn(t).label)}</span></td></tr>`).join("")}</table>`
+      : `<p class="empty">まだ成果物はありません。Jarvisが仕上げてチェックを通ると、ここに並びます。</p>`;
+  }
+}
+
+function boardHTML() {
+  const today = todayISO();
+  const rows = [...hq.tasks].sort((a, b) => (a.status === "done") - (b.status === "done") || (a.due || "9999").localeCompare(b.due || "9999"));
+  return `${rows.length ? `<table class="board"><tr><th>仕事</th><th>期限</th><th>誰の番</th></tr>${rows.map((t) => {
+    const turn = hq.turn(t);
+    return `<tr data-open="${esc(t.id)}"><td>${esc(t.title)}</td><td class="due ${t.due && t.due < today && t.status !== "done" ? "late" : ""}">${fmtDue(t.due)}</td><td><span class="chip ${turn.cls}">${esc(turn.label)}</span></td></tr>`;
+  }).join("")}</table>` : `<p class="empty">まだ仕事はありません。画面をタップして「研修の資料、木曜までにお願い」のように話しかけるか、下から追加してください。</p>`}
+  <div class="card">
+    <h3>仕事を追加</h3>
+    <div class="form">
+      <input class="wide" id="newTitle" placeholder="仕事（例：研修の資料）" aria-label="仕事">
+      <input id="newDue" type="date" aria-label="期限">
+      <select id="newOwner" aria-label="誰がやるか"><option value="jarvis">Jarvisに任せる</option><option value="you">自分でやる</option></select>
+      <textarea class="wide" id="newNotes" placeholder="メモ（誰向け・分量・形式など）" aria-label="メモ"></textarea>
+    </div>
+    <div class="row"><button class="btn primary" id="addTask">本部に追加</button></div>
+  </div>`;
+}
+
+function detailHTML(t) {
+  if (!t) return `<p class="empty">この仕事は見つかりません。</p>`;
+  const turn = hq.turn(t);
+  return `<button class="btn" id="backBoard">← 一覧へ</button>
+  <div class="card">
+    <h3>${esc(t.title)}</h3>
+    <div class="meta"><span>期限 ${fmtDue(t.due)}</span><span class="chip ${turn.cls}">${esc(turn.label)}</span><span>${esc(t.status)}</span></div>
+    ${t.notes ? `<div>${esc(t.notes)}</div>` : ""}
+    ${t.plan?.length ? `<ol class="plan">${t.plan.map((p) => `<li class="${p.done ? "ok" : ""}">${fmtDue(p.date)}　${esc(p.step)}</li>`).join("")}</ol>` : `<div class="empty">計画は次の定例（9時・12時・17時）でJarvisが期限から逆算して作ります。</div>`}
+    ${t.output ? `<div id="outBox" class="empty">成果物を読み込み中…</div>` : ""}
+    ${t.status === "review" || t.status === "fix" ? `<textarea id="fixText" placeholder="直してほしい点（例：もっと短く、図を増やして）">${esc(t.feedback || "")}</textarea>` : ""}
+    <div class="row">
+      ${t.status !== "done" ? `<button class="btn" id="delTask">削除</button>` : ""}
+      ${t.status === "review" || t.status === "fix" ? `<button class="btn" id="fixTask">直してもらう</button>` : ""}
+      ${t.status !== "done" ? `<button class="btn primary" id="doneTask">完了にする</button>` : ""}
+    </div>
+    ${t.log?.length ? `<div class="meta" style="display:grid;gap:2px">${t.log.slice(-5).map((l) => `<span>${new Date(l.at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}　${l.by === "jarvis" ? "Jarvis" : "あなた"}：${esc(l.text)}</span>`).join("")}</div>` : ""}
+  </div>`;
+}
+
+async function showOutput(t) {
+  const box = $("outBox"); if (!box) return;
+  try {
+    const f = await readFile(t.output);
+    box.outerHTML = f.text == null ? `<div class="empty">成果物ファイルが見つかりません（${esc(t.output)}）</div>` : `<pre class="doc">${esc(f.text)}</pre>`;
+  } catch { box.textContent = "成果物を読み込めませんでした。"; }
+}
+
+$("hqBody").addEventListener("click", async (e) => {
+  const row = e.target.closest("[data-open]");
+  if (row) { hqTab = "board"; hqDetail = row.dataset.open; renderHQ(); const t = hq.tasks.find((x) => x.id === hqDetail); if (t?.output) showOutput(t); return; }
+  const id = e.target.id, now = new Date().toISOString();
+  try {
+    if (id === "backBoard") { hqDetail = null; renderHQ(); }
+    if (id === "addTask") {
+      const title = $("newTitle").value.trim(); if (!title) return $("newTitle").focus();
+      const t = { id: newId(), title, notes: $("newNotes").value.trim(), due: $("newDue").value, owner: $("newOwner").value, status: "todo", plan: [], output: "", feedback: "", log: [{ at: now, by: "you", text: "追加" }], created: now };
+      await hq.update((ts) => ts.push(t), "HUDから: 仕事を追加"); toast("本部に追加しました");
+    }
+    if (id === "doneTask") { await hq.update((ts) => { const t = ts.find((x) => x.id === hqDetail); if (t) { t.status = "done"; t.log.push({ at: now, by: "you", text: "完了" }); } }, "HUDから: 完了"); toast("完了にしました"); }
+    if (id === "fixTask") {
+      const fb = $("fixText").value.trim(); if (!fb) return $("fixText").focus();
+      await hq.update((ts) => { const t = ts.find((x) => x.id === hqDetail); if (t) { t.status = "fix"; t.feedback = fb; t.log.push({ at: now, by: "you", text: "直してほしい：" + fb }); } }, "HUDから: 直し依頼");
+      toast("次の定例でJarvisが直します");
+    }
+    if (id === "delTask") { await hq.update((ts) => { const i = ts.findIndex((x) => x.id === hqDetail); if (i >= 0) ts.splice(i, 1); }, "HUDから: 削除"); hqDetail = null; renderHQ(); toast("削除しました"); }
+    if (id === "saveRules") {
+      const text = $("rulesText").value; const cur = await readFile("RULES.md");
+      await writeFile("RULES.md", text, cur.sha, "HUDから: ルール更新"); hq.rules = text; toast("ルールを保存しました");
+    }
+  } catch { toast("保存できませんでした。GitHub設定を確認してください"); }
+});
+document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => { hqTab = b.dataset.tab; hqDetail = null; renderHQ(); }));
+$("openHQ").addEventListener("click", () => { $("hq").hidden = false; renderHQ(); hq.load(); });
+$("closeHQ").addEventListener("click", () => { $("hq").hidden = true; });
+
+// 画面に戻ってきたら本部を読み直し、新しくチェック待ちが増えていたら知らせる
+let lastReview = new Set(hq.tasks.filter((t) => t.status === "review").map((t) => t.id));
+async function refreshHQ() {
+  await hq.load();
+  const fresh = hq.tasks.filter((t) => t.status === "review" && !lastReview.has(t.id));
+  fresh.forEach((t) => toast(`${t.title}ができました。確認をお願いします`));
+  lastReview = new Set(hq.tasks.filter((t) => t.status === "review").map((t) => t.id));
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshHQ(); });
+setInterval(() => { if (!document.hidden) refreshHQ(); }, 5 * 60 * 1000);
+hq.load();
+
+// Jarvisの声（読み上げ）のオン・オフ。標準はオフで、返事は文字で出す
+const vo = $("voiceOut");
+vo.setAttribute("aria-pressed", String(cfg.voiceOut));
+vo.addEventListener("click", () => {
+  cfg.voiceOut = !cfg.voiceOut;
+  vo.setAttribute("aria-pressed", String(cfg.voiceOut));
+  store.set("voiceOut", cfg.voiceOut ? "1" : "0");
+  if (!cfg.voiceOut) { synth.cancel(); stopTTS(); speakQueue = 0; }
+});
+
 // ---------- Claude ----------
 async function ask(text) {
   history.push({ role: "user", content: text });
@@ -505,21 +815,23 @@ async function ask(text) {
       if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
         full += ev.delta.text;
         buf += ev.delta.text;
-        if (!span) span = caption("ai", ""); span.textContent = full;
+        if (!span) span = caption("ai", ""); span.textContent = stripTags(full);
         // 文の区切りごとに読み上げて待ち時間を短くする
         let m;
         while ((m = buf.match(/^([\s\S]*?[。！？!?\n])/))) {
-          speak(m[1]);
+          if (!m[1].includes("<<")) speak(m[1]);
           buf = buf.slice(m[1].length);
         }
       }
     }
     const final = await stream.finalMessage();
-    if (buf.trim()) speak(buf);
+    if (buf.trim() && !buf.includes("<<")) speak(buf);
     // 思考ブロック（thinking）は履歴に残さず、返事の文章だけを保存する
     const replyText = (final.content || []).filter((b) => b.type === "text").map((b) => b.text).join("") || full;
     if (replyText.trim()) history.push({ role: "assistant", content: replyText });
     else history.pop();
+    if (span) span.textContent = stripTags(replyText || full);
+    applyTags(replyText || full);
     if (final.stop_reason === "refusal" && !full) { speak("申し訳ありません、その件にはお答えできません。"); }
   } catch (err) {
     if (err?.name === "AbortError" || abortCtl === null) return;
@@ -574,6 +886,8 @@ function fillSettings() {
   $("voice").value = cfg.voice;
   $("rate").value = cfg.rate;
   $("rateVal").textContent = "×" + cfg.rate.toFixed(2);
+  $("ghRepo").value = cfg.ghRepo;
+  $("ghToken").value = cfg.ghToken;
   $("ttsEngine").value = cfg.ttsEngine;
   $("elevenKey").value = cfg.elevenKey;
   const preset = [...$("elevenVoice").options].some(o => o.value === cfg.elevenVoice);
@@ -608,7 +922,7 @@ $("testVoice").addEventListener("click", () => {
   readSettings();
   if (!unlocked) { unlockAudio(); unlocked = true; }
   synth.cancel(); stopTTS(); speakQueue = 0;
-  speak(`お呼びでしょうか、${$("userName").value || "ボス"}。`);
+  speak(`お呼びでしょうか、${$("userName").value || "ボス"}。`, true);
 });
 $("saveSettings").addEventListener("click", () => {
   cfg.apiKey = cleanKey($("apiKey").value);
@@ -616,7 +930,10 @@ $("saveSettings").addEventListener("click", () => {
   cfg.model = $("model").value;
   cfg.userName = $("userName").value.trim() || "ボス";
   readSettings();
-  for (const k of ["apiKey", "model", "userName", "voice", ...TTS_KEYS]) store.set(k, cfg[k]);
+  cfg.ghRepo = $("ghRepo").value.trim() || "wazachiaki/jarvis-hq";
+  cfg.ghToken = cleanKey($("ghToken").value);
+  for (const k of ["apiKey", "model", "userName", "voice", "ghRepo", "ghToken", ...TTS_KEYS]) store.set(k, cfg[k]);
+  hq.load();
   store.set("rate", String(cfg.rate));
   dlg.close();
   setState("idle", "TAP TO START");
